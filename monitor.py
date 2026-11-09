@@ -18,7 +18,8 @@ Paginas:
     /control  panel para manejar la tablet desde la PC (solo abre desde la PC:
               http://localhost:8080/control)
 
-Rotacion inteligente: si suena musica muestra /musica; si no suena nada durante
+Rotacion inteligente (se puede apagar: modo fijo, desde el panel o con
+ROTACION_AUTOMATICA en config.json): si suena musica muestra /musica; si no suena nada durante
 ESPERA_SIN_MUSICA segundos vuelve a /. Si elegis una pagina a mano, se respeta
 durante BLOQUEO_MANUAL segundos. /apk nunca cambia sola.
 
@@ -52,6 +53,8 @@ ESPERA_SIN_MUSICA = 180   # seg sin que suene nada para volver de Musica al Moni
 BLOQUEO_MANUAL = 300      # seg que se respeta una pagina elegida a mano antes de rotar sola
 ROTAR_SIN_MUSICA = ["/", "/clima"]  # paginas que van alternando cuando no suena musica
 ROTACION_SEG = 30         # seg que se muestra cada una de esas paginas
+ROTACION_AUTOMATICA = True  # False = modo fijo: la tablet no cambia de pagina sola
+                            # (se puede prender y apagar desde el panel)
 
 # Clima (Open-Meteo: gratis y sin registro). Tu zona va en config.json.
 ZONA_NOMBRE = "Buenos Aires"
@@ -707,9 +710,15 @@ def vigilar_musica():
         time.sleep(MUESTREO)
 
 
+_rotacion = {"activa": ROTACION_AUTOMATICA}
+
+
 def pagina_sugerida():
     """Prioridades: 1) pomodoro corriendo, 2) musica sonando (o sono hace poco),
-    3) alternar entre ROTAR_SIN_MUSICA (+ Notas si hay) cada ROTACION_SEG segundos."""
+    3) alternar entre ROTAR_SIN_MUSICA (+ Notas si hay) cada ROTACION_SEG segundos.
+    En modo fijo devuelve "": la tablet se queda en la pagina que tiene."""
+    if not _rotacion["activa"]:
+        return ""
     if _pomo["corriendo"]:
         return "/pomodoro"
     if time.time() - _ultimo_sonando < ESPERA_SIN_MUSICA:
@@ -1004,6 +1013,8 @@ def tomar_orden(ip):
         return None
     # "auto": volver a la rotacion inteligente (sin ?manual=1, asi no queda trabada)
     final = pagina_sugerida() if destino == "auto" else destino
+    if not final:
+        return None
     log(f"[tablet {ip}] retiro la orden -> va a {final}")
     return final
 
@@ -1342,7 +1353,7 @@ PANEL_HTML = """<!DOCTYPE html>
         <button data-ir="notas" data-pagina="/notas">Notas</button>
         <button data-ir="apk" data-pagina="/apk">Apps</button>
         <span></span>
-        <button data-ir="auto" class="auto" id="btn-auto">Volver a autom&aacute;tico</button>
+        <button class="auto" id="btn-rotacion">Cambio autom&aacute;tico de p&aacute;ginas</button>
       </div>
       <p class="detalle" id="detalle-auto"></p>
     </section>
@@ -1410,11 +1421,16 @@ async function refrescar() {
   $("nota-vista").textContent = t.conectada ? "Vista previa de lo que muestra la tablet."
                                             : "La tablet no está conectada: muestra la página que le tocaría.";
 
+  rotacion = d.rotacion_automatica;
+  $("btn-rotacion").textContent = "Cambio automático: " + (rotacion ? "activado" : "desactivado");
+  $("btn-rotacion").classList.toggle("activo", rotacion);
   $("detalle-auto").textContent = d.orden_pendiente
     ? "Enviando la orden a la tablet…"
-    : d.vuelve_al_monitor_en != null && !(d.musica && d.musica.estado === "Playing")
-      ? `Sin música: vuelve al Monitor en ${d.vuelve_al_monitor_en} s si sigue en automático.`
-      : "En automático: Pomodoro si está corriendo; si no, Música mientras suena algo; si no, va alternando Monitor, Clima y Notas (si hay).";
+    : !rotacion
+      ? "Modo fijo: la tablet se queda en la página que elijas, con estos botones o con los de la tablet."
+      : d.vuelve_al_monitor_en != null && !(d.musica && d.musica.estado === "Playing")
+        ? `Sin música: vuelve al Monitor en ${d.vuelve_al_monitor_en} s.`
+        : "En automático: Pomodoro si está corriendo; si no, Música mientras suena algo; si no, va alternando Monitor, Clima y Notas (si hay).";
 
   pomo = d.pomodoro;
   pomoFin = Date.now() + pomo.restante * 1000;
@@ -1439,6 +1455,13 @@ document.querySelectorAll("[data-accion]").forEach(b => b.addEventListener("clic
   await fetch("/control?accion=" + b.dataset.accion + "&ajax=1");
   refrescar();
 }));
+
+// ----- Modo automatico / fijo -----
+let rotacion = true;
+$("btn-rotacion").addEventListener("click", async () => {
+  await fetch("/control/rotacion?activa=" + (rotacion ? "0" : "1"));
+  refrescar();
+});
 
 // ----- Pomodoro -----
 const COLORES_POMO = { trabajo: "#ff6b5e", descanso: "#1ed760", largo: "#4fc3f7" };
@@ -1681,6 +1704,13 @@ class Manejador(BaseHTTPRequestHandler):
             dar_orden(destinos[pag])
             self.send_response(204)
             self.end_headers()
+        elif url.path == "/control/rotacion":
+            _rotacion["activa"] = params.get("activa", ["1"])[0] == "1"
+            log(f"[panel] cambio automatico de paginas: {'activado' if _rotacion['activa'] else 'desactivado'}")
+            if _rotacion["activa"]:
+                dar_orden("auto")  # que la tablet pase ya a la pagina que corresponde
+            self.send_response(204)
+            self.end_headers()
         elif url.path == "/control/pomodoro":
             accion = params.get("a", [""])[0]
             if accion in ("iniciar", "pausar", "alternar", "saltar", "reiniciar"):
@@ -1705,6 +1735,7 @@ class Manejador(BaseHTTPRequestHandler):
                 },
                 "musica": m if isinstance(m, dict) else {"mensaje": m},
                 "sugerida": pagina_sugerida(),
+                "rotacion_automatica": _rotacion["activa"],
                 "vuelve_al_monitor_en": max(0, int(ESPERA_SIN_MUSICA - sin_musica))
                 if pagina_sugerida() == "/musica" else None,
                 "orden_pendiente": _orden["destino"],

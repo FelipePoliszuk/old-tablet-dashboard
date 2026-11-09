@@ -166,6 +166,19 @@ class TestRotacion(unittest.TestCase):
         self.assertEqual(monitor.tomar_orden("1.2.3.4"), "/clima?manual=1")
         self.assertIsNone(monitor.tomar_orden("1.2.3.4"))
 
+    def test_modo_fijo_no_sugiere_nada(self):
+        mock.patch.dict(monitor._rotacion, {"activa": False}).start()
+        monitor._pomo["corriendo"] = True        # ni el pomodoro mueve la tablet
+        monitor._ultimo_sonando = time.time()    # ni la musica
+        self.assertEqual(monitor.pagina_sugerida(), "")
+
+    def test_modo_fijo_igual_obedece_al_panel(self):
+        mock.patch.dict(monitor._rotacion, {"activa": False}).start()
+        monitor.dar_orden("/notas?manual=1")
+        self.assertEqual(monitor.tomar_orden("1.2.3.4"), "/notas?manual=1")
+        monitor.dar_orden("auto")                # "automatico" en modo fijo: no hace nada
+        self.assertIsNone(monitor.tomar_orden("1.2.3.4"))
+
 
 class TestServidor(unittest.TestCase):
     """Levanta el servidor de verdad en un puerto libre y le hace pedidos HTTP."""

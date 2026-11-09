@@ -23,7 +23,7 @@ En la tablet no hay nada instalado y no hace falta root: es el navegador de fáb
 - **Clima**: condiciones actuales, aviso de "¿llueve en las próximas 12 h?", pronóstico de 3 días y de las próximas horas ([Open-Meteo](https://open-meteo.com/), gratis y sin clave).
 - **Pomodoro**: 25/5 con descanso largo cada 4 y notificación en el escritorio al cambiar de fase.
 - **Notas**: se escriben en la PC y se ven enormes en la tablet; se marcan como listas con un clic. Se guardan en disco.
-- **Rotación inteligente**: el pomodoro mientras corre, la música mientras suena algo y, si no, va alternando monitor, clima y notas. Una página elegida a mano se respeta 5 minutos.
+- **Rotación inteligente**: el pomodoro mientras corre, la música mientras suena algo y, si no, va alternando monitor, clima y notas. Una página elegida a mano se respeta 5 minutos. Se puede apagar desde el panel (modo fijo), y así la tablet solo cambia de página cuando se lo pedís.
 - **Panel de control** en `http://localhost:8080/control`: vista previa en vivo, cambiar la página de la tablet, controlar la música y el pomodoro, escribir notas. Solo se puede abrir desde la propia PC.
 - **Instalar apps**: dejás un `.apk` en `apk/` y lo instalás desde la tablet con un clic.
 
@@ -77,7 +77,7 @@ cp config.example.json config.json
 { "ZONA_NOMBRE": "Palermo", "ZONA_LAT": -34.58, "ZONA_LON": -58.42, "POMO_TRABAJO": 3000 }
 ```
 
-Se puede configurar el puerto y la frecuencia de actualización, los tiempos de la rotación (`ROTAR_SIN_MUSICA`, `ROTACION_SEG`, `ESPERA_SIN_MUSICA`, `BLOQUEO_MANUAL`), la zona y el huso horario del clima, y los tiempos del pomodoro. `config.json` está en el `.gitignore`, así tus datos (como tu barrio) no quedan en el repositorio. Las claves desconocidas y el JSON con errores se informan y se ignoran.
+Se puede configurar el puerto y la frecuencia de actualización, si la rotación es automática y sus tiempos (`ROTACION_AUTOMATICA`, `ROTAR_SIN_MUSICA`, `ROTACION_SEG`, `ESPERA_SIN_MUSICA`, `BLOQUEO_MANUAL`), la zona y el huso horario del clima, y los tiempos del pomodoro. `config.json` está en el `.gitignore`, así tus datos (como tu barrio) no quedan en el repositorio. Las claves desconocidas y el JSON con errores se informan y se ignoran.
 
 ### Que arranque solo (systemd)
 

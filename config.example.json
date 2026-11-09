@@ -6,6 +6,7 @@
   "BLOQUEO_MANUAL": 300,
   "ROTAR_SIN_MUSICA": ["/", "/clima"],
   "ROTACION_SEG": 30,
+  "ROTACION_AUTOMATICA": true,
 
   "ZONA_NOMBRE": "Buenos Aires",
   "ZONA_LAT": -34.6037,

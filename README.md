@@ -23,7 +23,7 @@ No app is installed on the tablet and nothing needs root: it is just the stock 2
 - **Weather**: current conditions, a "will it rain in the next 12 h?" banner, a 3-day outlook and hourly forecast ([Open-Meteo](https://open-meteo.com/), free and no API key).
 - **Pomodoro**: 25/5 with a long break every 4, desktop notifications when a phase ends.
 - **Notes**: typed on the PC, shown huge on the tablet; dismissed with one click. Saved to disk.
-- **Smart rotation**: pomodoro while it runs, music while something is playing, otherwise it cycles monitor, weather and notes. A page chosen by hand is respected for 5 minutes.
+- **Smart rotation**: pomodoro while it runs, music while something is playing, otherwise it cycles monitor, weather and notes. A page chosen by hand is respected for 5 minutes. It can be turned off from the panel (fixed mode) so the tablet only changes page when you ask it to.
 - **Control panel** at `http://localhost:8080/control`: live preview of the tablet, switch its page, control music and the pomodoro, write notes. Only reachable from the PC itself.
 - **App sideloading**: drop an `.apk` in `apk/` and install it from the tablet with one click.
 
@@ -90,7 +90,7 @@ cp config.example.json config.json
 { "ZONA_NOMBRE": "Palermo", "ZONA_LAT": -34.58, "ZONA_LON": -58.42, "POMO_TRABAJO": 3000 }
 ```
 
-Options: port and refresh rate, rotation timing (`ROTAR_SIN_MUSICA`, `ROTACION_SEG`, `ESPERA_SIN_MUSICA`, `BLOQUEO_MANUAL`), weather location and time zone, and pomodoro lengths. `config.json` is git-ignored, so personal data such as your location stays out of the repo. Unknown keys and invalid JSON are reported and ignored.
+Options: port and refresh rate, rotation on/off and timing (`ROTACION_AUTOMATICA`, `ROTAR_SIN_MUSICA`, `ROTACION_SEG`, `ESPERA_SIN_MUSICA`, `BLOQUEO_MANUAL`), weather location and time zone, and pomodoro lengths. `config.json` is git-ignored, so personal data such as your location stays out of the repo. Unknown keys and invalid JSON are reported and ignored.
 
 ### Run it on login (systemd)
 
