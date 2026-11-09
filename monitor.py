@@ -1509,7 +1509,7 @@ CSS_APPS = """
        font-size:24px; padding:16px 18px; margin-bottom:8px; }
 """
 
-# Carpeta apk/ al lado de este script (en tu PC: ~/tablet-coby/apk)
+# Carpeta apk/ al lado de este script
 CARPETA_APK = os.path.join(os.path.dirname(os.path.abspath(__file__)), "apk")
 
 

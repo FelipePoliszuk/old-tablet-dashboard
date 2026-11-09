@@ -1,8 +1,8 @@
-# tablet-coby · a second life for a 2012 tablet
+# old-tablet-dashboard · a second life for a 2012 tablet
 
 *[Leer en español](README.es.md)*
 
-![tests](https://github.com/FelipePoliszuk/tablet-coby/actions/workflows/tests.yml/badge.svg)
+![tests](https://github.com/FelipePoliszuk/old-tablet-dashboard/actions/workflows/tests.yml/badge.svg)
 
 A self-hosted desk dashboard for an old **Coby Kyros MID7033** (Android 4.0, 512 MB RAM, 800×480 resistive screen with a broken touch panel). A single Python file running on my Ubuntu PC serves pages that the tablet shows full-screen: PC stats, what's playing on Spotify, the weather in my neighbourhood, a pomodoro timer and notes I type from the PC.
 
@@ -72,8 +72,8 @@ Requirements: Linux, Python 3.10+. Optional: `playerctl` (music), `python3-pil` 
 
 ```bash
 sudo apt install playerctl python3-pil
-git clone https://github.com/FelipePoliszuk/tablet-coby.git ~/tablet-coby
-python3 ~/tablet-coby/monitor.py
+git clone https://github.com/FelipePoliszuk/old-tablet-dashboard.git ~/old-tablet-dashboard
+python3 ~/old-tablet-dashboard/monitor.py
 ```
 
 It prints the address to open on the tablet, for example `http://192.168.1.50:8080`. On the tablet, enable full screen in the browser (*Settings → Labs*) and *Stay awake* in the developer options.
@@ -96,7 +96,7 @@ Options: port and refresh rate, rotation timing (`ROTAR_SIN_MUSICA`, `ROTACION_S
 
 ```bash
 mkdir -p ~/.config/systemd/user
-cp ~/tablet-coby/monitor.service ~/.config/systemd/user/
+cp ~/old-tablet-dashboard/monitor.service ~/.config/systemd/user/
 systemctl --user enable --now monitor.service
 journalctl --user -u monitor.service -f   # logs
 ```

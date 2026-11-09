@@ -1,6 +1,6 @@
-# tablet-coby · una segunda vida para una tablet de 2012
+# old-tablet-dashboard · una segunda vida para una tablet de 2012
 
-![tests](https://github.com/FelipePoliszuk/tablet-coby/actions/workflows/tests.yml/badge.svg)
+![tests](https://github.com/FelipePoliszuk/old-tablet-dashboard/actions/workflows/tests.yml/badge.svg)
 
 *[Read in English](README.md)*
 
@@ -59,8 +59,8 @@ Requisitos: Linux y Python 3.10 o más nuevo. Opcionales: `playerctl` (música),
 
 ```bash
 sudo apt install playerctl python3-pil
-git clone https://github.com/FelipePoliszuk/tablet-coby.git ~/tablet-coby
-python3 ~/tablet-coby/monitor.py
+git clone https://github.com/FelipePoliszuk/old-tablet-dashboard.git ~/old-tablet-dashboard
+python3 ~/old-tablet-dashboard/monitor.py
 ```
 
 Muestra la dirección que hay que abrir en la tablet, por ejemplo `http://192.168.1.50:8080`. En la tablet conviene activar la pantalla completa del navegador (*Configuración → Labs*) y *Permanecer activo* en las opciones de desarrollador.
@@ -83,7 +83,7 @@ Se puede configurar el puerto y la frecuencia de actualización, los tiempos de 
 
 ```bash
 mkdir -p ~/.config/systemd/user
-cp ~/tablet-coby/monitor.service ~/.config/systemd/user/
+cp ~/old-tablet-dashboard/monitor.service ~/.config/systemd/user/
 systemctl --user enable --now monitor.service
 journalctl --user -u monitor.service -f   # mensajes
 ```

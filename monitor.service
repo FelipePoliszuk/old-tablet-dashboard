@@ -13,8 +13,8 @@ After=network-online.target
 
 [Service]
 # %h = tu carpeta personal. Cambia la ruta si clonaste el repo en otro lado.
-ExecStart=/usr/bin/python3 %h/tablet-coby/monitor.py
-WorkingDirectory=%h/tablet-coby
+ExecStart=/usr/bin/python3 %h/old-tablet-dashboard/monitor.py
+WorkingDirectory=%h/old-tablet-dashboard
 Environment=PYTHONUNBUFFERED=1
 Restart=always
 RestartSec=3
