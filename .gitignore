@@ -1,0 +1,9 @@
+# Datos personales y locales: no se suben
+config.json
+notas.json
+notas.json.tmp
+apk/
+
+# Python
+__pycache__/
+*.pyc

@@ -1,0 +1,23 @@
+# Servicio de systemd (de usuario) para que el servidor arranque solo al iniciar sesion.
+#
+#   mkdir -p ~/.config/systemd/user
+#   cp monitor.service ~/.config/systemd/user/
+#   systemctl --user enable --now monitor.service
+#
+#   Mensajes:   journalctl --user -u monitor.service -f
+#   Reiniciar:  systemctl --user restart monitor.service
+
+[Unit]
+Description=Dashboard para la tablet vieja (monitor.py)
+After=network-online.target
+
+[Service]
+# %h = tu carpeta personal. Cambia la ruta si clonaste el repo en otro lado.
+ExecStart=/usr/bin/python3 %h/tablet-coby/monitor.py
+WorkingDirectory=%h/tablet-coby
+Environment=PYTHONUNBUFFERED=1
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target

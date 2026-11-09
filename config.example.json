@@ -1,0 +1,20 @@
+{
+  "PUERTO": 8080,
+  "REFRESCO": 3,
+
+  "ESPERA_SIN_MUSICA": 180,
+  "BLOQUEO_MANUAL": 300,
+  "ROTAR_SIN_MUSICA": ["/", "/clima"],
+  "ROTACION_SEG": 30,
+
+  "ZONA_NOMBRE": "Buenos Aires",
+  "ZONA_LAT": -34.6037,
+  "ZONA_LON": -58.3816,
+  "ZONA_HUSO": "America/Argentina/Buenos_Aires",
+  "CLIMA_CADA": 600,
+
+  "POMO_TRABAJO": 1500,
+  "POMO_DESCANSO": 300,
+  "POMO_LARGO": 900,
+  "POMO_CADA": 4
+}
