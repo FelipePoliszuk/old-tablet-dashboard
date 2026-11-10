@@ -14,6 +14,7 @@ Paginas:
     /clima    clima de tu zona (Open-Meteo), con aviso de lluvia y proximas horas
     /pomodoro temporizador pomodoro (25/5, descanso largo cada 4)
     /notas    notas grandes que se escriben desde el panel (se guardan en notas.json)
+    /claude   uso de Claude (sesion de 5 h y semana), con la sesion de Claude Code de esta PC
     /apk      APKs de la carpeta apk/ para instalar en la tablet
     /control  panel para manejar la tablet desde la PC (solo abre desde la PC:
               http://localhost:8080/control)
@@ -40,6 +41,7 @@ import socket
 import subprocess
 import threading
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -71,9 +73,19 @@ POMO_DESCANSO = 5 * 60   # seg de descanso corto
 POMO_LARGO = 15 * 60     # seg de descanso largo
 POMO_CADA = 4            # cada cuantos pomodoros toca el descanso largo
 
+# Uso de Claude: los mismos porcentajes que muestra claude.ai (sesion de 5 h y semana).
+# Se consultan con la sesion que Claude Code guarda en esta PC. No es una API oficial:
+# si Anthropic la cambia, la pagina muestra el error y el resto sigue andando.
+CLAUDE_CREDENCIALES = "~/.claude/.credentials.json"
+CLAUDE_CADA = 300        # seg entre consultas (5 minutos)
+CLAUDE_API = os.environ.get("MONITOR_CLAUDE_API", "https://api.anthropic.com/api/oauth/usage")
+
 
 def _cargar_config():
-    """Pisa los valores de arriba con los de config.json (si existe)."""
+    """Pisa los valores de arriba con los de config.json (si existe).
+    Con MONITOR_SIN_CONFIG=1 no lo lee: los tests usan siempre los valores de fabrica."""
+    if os.environ.get("MONITOR_SIN_CONFIG") == "1":
+        return
     ruta = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
     try:
         with open(ruta, encoding="utf-8") as f:
@@ -288,7 +300,7 @@ def generar_html():
     cabecera = f"""<table class="cab"><tr>
   <td class="reloj">{time.strftime("%H:%M")}</td>
   <td class="fecha">{fecha_es()}<br>
-    <span class="tenue">{html.escape(socket.gethostname())} &middot; encendida hace {fmt_uptime(uptime)}</span></td>
+    <span class="tenue">{html.escape(socket.gethostname())}</span></td>
   <td class="der" style="vertical-align:top">{nav("monitor")}</td>
 </tr></table>"""
 
@@ -297,7 +309,7 @@ def generar_html():
     <div class="titulo">CPU</div>
     <div class="grande" style="color:{color(cpu)}">{cpu:.0f}<span class="unidad">%</span></div>
     {barras_nucleos(estado["nucleos"])}
-    <div class="tenue chico">carga {" &middot; ".join(carga)}</div>
+    <div class="tenue chico">carga {" &middot; ".join(carga)} &nbsp;&middot;&nbsp; encendida hace {fmt_uptime(uptime)}</div>
   </td>
   <td class="caja fila1" style="width:22%">
     <div class="titulo">Temperatura</div>
@@ -474,8 +486,8 @@ td {{ padding:0; }}
 
 CSS_NAV = """
 .nav { white-space:nowrap; }
-.nav a { color:#c8ccd4; text-decoration:none; font-size:14px; padding:6px 9px;
-         margin-left:3px; background:#262a31; }
+.nav a { color:#c8ccd4; text-decoration:none; font-size:13px; padding:5px 7px;
+         margin-left:2px; background:#262a31; }
 .nav a.activa { color:#0e0f12; background:#1db954; font-weight:bold; }
 """
 
@@ -483,7 +495,7 @@ CSS_NAV = """
 def nav(activa):
     links = [("monitor", "/", "Monitor"), ("clima", "/clima", "Clima"),
              ("musica", "/musica", "M&uacute;sica"), ("pomodoro", "/pomodoro", "Pomodoro"),
-             ("notas", "/notas", "Notas"), ("apk", "/apk", "Apps")]
+             ("notas", "/notas", "Notas"), ("claude", "/claude", "Claude"), ("apk", "/apk", "Apps")]
     # ?manual=1 le avisa a la pagina que la eligio una persona: no rotar por un rato
     return '<span class="nav">' + "".join(
         f'<a href="{url}?manual=1"{" class=activa" if clave == activa else ""}>{texto}</a>'
@@ -666,7 +678,7 @@ CSS_MUSICA = """
 .portada { display:block; }
 .lienzo { width:100%; table-layout:fixed; }
 .col-info { vertical-align:top; padding-left:22px; overflow:hidden; }
-.nav-esquina { position:absolute; bottom:8px; right:10px; width:240px; text-align:right; }
+.nav-esquina { position:absolute; bottom:8px; right:10px; width:300px; text-align:right; }
 .nav-esquina .nav { white-space:normal; }
 .nav-esquina a { display:inline-block; margin-top:4px; }
 .tiempos { table-layout:fixed; }
@@ -1034,6 +1046,219 @@ def generar_apps():
     return "Apps", CSS_APPS, "{s0}{s1}", [cabecera, filas]
 
 
+# ---------- Uso de Claude ----------
+
+_claude = {"datos": None, "actualizado": 0.0, "error": None}
+
+
+class ErrorClaude(Exception):
+    """Problema esperable (sin sesion, sesion vencida, etc.): se muestra tal cual en la pagina."""
+
+
+def leer_token_claude():
+    """Token de la sesion de Claude Code. Nunca se muestra ni se guarda en otro lado."""
+    ruta = os.path.expanduser(CLAUDE_CREDENCIALES)
+    try:
+        with open(ruta, encoding="utf-8") as f:
+            oauth = json.load(f).get("claudeAiOauth") or {}
+    except FileNotFoundError:
+        raise ErrorClaude("No encontré la sesión de Claude Code en esta PC. "
+                          "Iniciá sesión corriendo claude en una terminal.")
+    except (OSError, ValueError, AttributeError):
+        raise ErrorClaude("No pude leer el archivo de sesión de Claude Code.")
+    token = oauth.get("accessToken")
+    if not token:
+        raise ErrorClaude("La sesión de Claude Code no tiene token. Iniciá sesión con claude.")
+    vence = oauth.get("expiresAt")  # en milisegundos
+    if isinstance(vence, (int, float)) and vence / 1000 < time.time():
+        # No la renovamos desde aca para no interferir con Claude Code
+        raise ErrorClaude("La sesión de Claude Code venció. Abrí claude en una terminal "
+                          "y se renueva sola.")
+    return token
+
+
+def bajar_uso_claude():
+    req = urllib.request.Request(CLAUDE_API, headers={
+        "Authorization": "Bearer " + leer_token_claude(),
+        "anthropic-beta": "oauth-2025-04-20",
+        "Accept": "application/json",
+        "User-Agent": "old-tablet-dashboard",
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403):
+            raise ErrorClaude("Claude no aceptó la sesión. Abrí claude en una terminal para renovarla.")
+        if e.code == 429:
+            raise ErrorClaude("Demasiadas consultas: vuelvo a intentar en unos minutos.")
+        raise ErrorClaude(f"Claude respondió con error {e.code}.")
+    except (urllib.error.URLError, OSError):
+        raise ErrorClaude("Sin conexión con Claude.")
+    except ValueError:
+        raise ErrorClaude("Claude respondió algo que no entiendo (¿cambió el formato?).")
+
+
+def vigilar_claude():
+    """Hilo de fondo: consulta el uso cada CLAUDE_CADA segundos. Si falla, conserva el ultimo dato."""
+    while True:
+        try:
+            _claude.update(datos=bajar_uso_claude(), actualizado=time.time(), error=None)
+        except ErrorClaude as e:
+            if _claude["error"] != str(e):
+                log(f"[claude] {e}")
+            _claude["error"] = str(e)
+        except Exception as e:  # algo inesperado: que no se caiga el hilo
+            _claude["error"] = "No se pudo consultar el uso de Claude."
+            log(f"[claude] error inesperado: {type(e).__name__}")
+        time.sleep(CLAUDE_CADA)
+
+
+def a_epoch(iso):
+    """'2026-11-10T16:40:00+00:00' (o con Z) -> segundos epoch; None si no se puede."""
+    if not iso or not isinstance(iso, str):
+        return None
+    import datetime
+    try:
+        return datetime.datetime.fromisoformat(iso.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
+
+
+VENTANAS_CLAUDE = [
+    ("five_hour", "Sesión actual", 5 * 3600),
+    ("seven_day", "Esta semana", 7 * 86400),
+    ("seven_day_opus", "Opus · semana", 7 * 86400),
+    ("seven_day_sonnet", "Sonnet · semana", 7 * 86400),
+]
+
+
+def ventanas_claude(datos):
+    salida = []
+    for clave, nombre, duracion in VENTANAS_CLAUDE:
+        v = (datos or {}).get(clave)
+        if not isinstance(v, dict) or not isinstance(v.get("utilization"), (int, float)):
+            continue
+        salida.append({"clave": clave, "nombre": nombre, "pct": float(v["utilization"]),
+                       "reinicio": a_epoch(v.get("resets_at")), "duracion": duracion})
+    return salida
+
+
+def proyeccion_limite(pct, reinicio, duracion, ahora=None):
+    """Si sigue al mismo ritmo, momento en que llegaria al 100%. None si no llega antes del reinicio."""
+    ahora = time.time() if ahora is None else ahora
+    if not reinicio or pct <= 0:
+        return None
+    inicio = reinicio - duracion
+    transcurrido = ahora - inicio
+    if transcurrido < duracion * 0.05:  # muy temprano para estimar un ritmo
+        return None
+    lleno = inicio + 100.0 / (pct / transcurrido)
+    return lleno if ahora < lleno < reinicio else None
+
+
+def fmt_cuando(t, ahora=None):
+    """'hoy 13:40', 'mañana 05:00' o 'el lunes 05:00'."""
+    ahora = time.time() if ahora is None else ahora
+    lt, la = time.localtime(t), time.localtime(ahora)
+    hora = time.strftime("%H:%M", lt)
+    dias = (time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, 0, 0, 0, 0, 0, -1)) -
+            time.mktime((la.tm_year, la.tm_mon, la.tm_mday, 0, 0, 0, 0, 0, -1))) / 86400
+    if round(dias) == 0:
+        return f"hoy {hora}"
+    if round(dias) == 1:
+        return f"ma&ntilde;ana {hora}"
+    return f"el {DIAS[lt.tm_wday]} {hora}"
+
+
+def fmt_falta(seg):
+    seg = max(0, int(seg))
+    d, resto = divmod(seg, 86400)
+    h, resto = divmod(resto, 3600)
+    m = resto // 60
+    if d:
+        return f"{d} d {h} h"
+    if h:
+        return f"{h} h {m} min"
+    return f"{m} min"
+
+
+def generar_claude():
+    cabecera = f"""<table class="cab"><tr>
+  <td class="reloj">{time.strftime("%H:%M")}</td>
+  <td class="fecha">{fecha_es()}<br><span class="tenue">Uso de Claude</span></td>
+  <td class="der" style="vertical-align:top">{nav("claude")}</td>
+</tr></table>"""
+
+    ventanas = ventanas_claude(_claude["datos"])
+    if not ventanas:
+        msg = html.escape(_claude["error"]) if _claude["error"] else "Consultando el uso de Claude&hellip;"
+        return "Claude", CSS_CLAUDE, "{s0}{s1}", [cabecera, f'<div class="vacio">{msg}</div>']
+
+    ahora = time.time()
+
+    def tarjeta(v, grande):
+        reinicio = ""
+        if v["reinicio"]:
+            reinicio = (f'Se restablece {fmt_cuando(v["reinicio"], ahora)} '
+                        f'<span class="tenue">&middot; en {fmt_falta(v["reinicio"] - ahora)}</span>')
+        clase = "pct" if grande else "pct-chico"
+        return (f'<div class="nombre">{v["nombre"]}</div>'
+                f'<div class="{clase}" style="color:{color(v["pct"])}">{v["pct"]:.0f}<span class="unidad">%</span></div>'
+                f'{barra(v["pct"], 12 if grande else 8)}'
+                f'<div class="reinicio">{reinicio}</div>')
+
+    principales = [v for v in ventanas if v["clave"] in ("five_hour", "seven_day")]
+    extras = [v for v in ventanas if v["clave"] not in ("five_hour", "seven_day")]
+
+    celdas = "".join(f'<td class="caja" style="width:50%">{tarjeta(v, True)}</td>' for v in principales)
+    cuerpo = f'<table class="grilla"><tr>{celdas}</tr></table>'
+
+    # Aviso de ritmo, como el de claude.ai
+    avisos = []
+    for v in principales:
+        lleno = proyeccion_limite(v["pct"], v["reinicio"], v["duracion"], ahora)
+        if lleno:
+            cual = "de la sesi&oacute;n" if v["clave"] == "five_hour" else "semanal"
+            avisos.append(f"A este ritmo lleg&aacute;s al l&iacute;mite {cual} {fmt_cuando(lleno, ahora)}, "
+                          f"antes de que se restablezca.")
+    if avisos:
+        cuerpo += f'<div class="aviso">{"<br>".join(avisos)}</div>'
+
+    if extras:
+        cuerpo += ('<table class="grilla"><tr>' + "".join(
+            f'<td class="caja chica">{tarjeta(v, False)}</td>' for v in extras) + '</tr></table>')
+
+    hace = int((ahora - _claude["actualizado"]) / 60)
+    pie = f"actualizado hace {hace} min &middot; dato no oficial"
+    if _claude["error"]:
+        pie = f'<span class="alerta">{html.escape(_claude["error"])}</span> &middot; &uacute;ltimo dato de hace {hace} min'
+    cuerpo += f'<div class="pie tenue">{pie}</div>'
+    return "Claude", CSS_CLAUDE, "{s0}{s1}", [cabecera, cuerpo]
+
+
+CSS_CLAUDE = """
+.cab { width:100%; margin-bottom:2px; }
+.reloj { font-size:56px; font-weight:bold; line-height:56px; width:1%; padding-right:16px; letter-spacing:-1px; }
+.fecha { font-size:17px; color:#e6e6e6; line-height:24px; vertical-align:middle; }
+.grilla { width:100%; table-layout:fixed; }
+.caja { background:#1b1d22; padding:12px 16px; vertical-align:top; border:4px solid #0e0f12; }
+.caja.chica { padding:8px 14px; }
+.nombre { font-size:14px; color:#9aa0aa; letter-spacing:1px; text-transform:uppercase; }
+.pct { font-size:72px; font-weight:bold; line-height:76px; letter-spacing:-2px; }
+.pct-chico { font-size:28px; font-weight:bold; line-height:32px; }
+.unidad { font-size:34px; }
+.pct-chico .unidad { font-size:18px; }
+.barra { background:#2c3038; width:100%; margin:6px 0 4px 0; }
+.reinicio { font-size:15px; color:#e6e6e6; margin-top:4px; }
+.aviso { background:#3a3115; color:#ffd54f; font-size:16px; font-weight:bold; padding:9px 14px;
+         margin:4px 4px 0 4px; line-height:22px; }
+.pie { font-size:12px; margin-top:6px; text-align:right; padding-right:4px; }
+.alerta { color:#ffb300; }
+.vacio { font-size:21px; color:#c8ccd4; margin:110px 40px 0 40px; text-align:center; line-height:32px; }
+"""
+
+
 # ---------- Pomodoro ----------
 
 # (los tiempos POMO_* estan arriba, con el resto de la configuracion)
@@ -1318,6 +1543,12 @@ PANEL_HTML = """<!DOCTYPE html>
   .enlace:hover { background: none; color: #ff8a80; }
   .pomo-cuenta { font-size: 44px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -1px; }
   .pomo-fase { font-weight: 600; margin-bottom: 2px; }
+  .uso-fila { margin-bottom: 12px; }
+  .uso-fila .linea { display: flex; justify-content: space-between; font-size: 15px; }
+  .uso-fila .pct { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .uso-barra { height: 6px; background: #262a31; border-radius: 3px; margin: 6px 0 3px; overflow: hidden; }
+  .uso-barra div { height: 6px; }
+  .uso-fila .cuando { font-size: 12px; color: #9aa0aa; }
 </style>
 </head><body><main>
 <header>
@@ -1351,8 +1582,8 @@ PANEL_HTML = """<!DOCTYPE html>
         <button data-ir="clima" data-pagina="/clima">Clima</button>
         <button data-ir="pomodoro" data-pagina="/pomodoro">Pomodoro</button>
         <button data-ir="notas" data-pagina="/notas">Notas</button>
+        <button data-ir="claude" data-pagina="/claude">Claude</button>
         <button data-ir="apk" data-pagina="/apk">Apps</button>
-        <span></span>
         <button class="auto" id="btn-rotacion">Cambio autom&aacute;tico de p&aacute;ginas</button>
       </div>
       <p class="detalle" id="detalle-auto"></p>
@@ -1366,6 +1597,10 @@ PANEL_HTML = """<!DOCTYPE html>
         <button data-accion="play-pause" class="principal" id="btn-pp">Play / Pausa</button>
         <button data-accion="next" aria-label="Siguiente">&raquo;</button>
       </div>
+    </section>
+    <section class="tarjeta">
+      <h2>Uso de Claude</h2>
+      <div id="claude-uso" class="detalle">Consultando&hellip;</div>
     </section>
     <section class="tarjeta">
       <h2>Pomodoro</h2>
@@ -1440,6 +1675,7 @@ async function refrescar() {
   $("pomo-ciclos").textContent = `${pomo.ciclos} completados`;
   pintarPomodoro();
   pintarNotas(d.notas || []);
+  pintarClaude(d.claude || {});
 
   const m = d.musica || {};
   $("cancion").textContent = m.titulo || m.mensaje || "—";
@@ -1462,6 +1698,38 @@ $("btn-rotacion").addEventListener("click", async () => {
   await fetch("/control/rotacion?activa=" + (rotacion ? "0" : "1"));
   refrescar();
 });
+
+// ----- Uso de Claude -----
+function colorUso(p) { return p < 60 ? "#4caf50" : p < 85 ? "#ffb300" : "#e53935"; }
+function pintarClaude(c) {
+  const caja = $("claude-uso");
+  const vs = c.ventanas || [];
+  if (!vs.length) { caja.textContent = c.error || "Consultando…"; return; }
+  caja.replaceChildren(...vs.map(v => {
+    const fila = document.createElement("div"); fila.className = "uso-fila";
+    const linea = document.createElement("div"); linea.className = "linea";
+    const nombre = document.createElement("span"); nombre.textContent = v.nombre;
+    const pct = document.createElement("span"); pct.className = "pct"; pct.textContent = Math.round(v.pct) + "%";
+    pct.style.color = colorUso(v.pct);
+    linea.append(nombre, pct);
+    const barra = document.createElement("div"); barra.className = "uso-barra";
+    const lleno = document.createElement("div");
+    lleno.style.width = Math.min(100, v.pct) + "%"; lleno.style.background = colorUso(v.pct);
+    barra.append(lleno);
+    const cuando = document.createElement("div"); cuando.className = "cuando";
+    if (v.reinicio) {
+      const d = new Date(v.reinicio * 1000);
+      cuando.textContent = "Se restablece " + d.toLocaleString("es-AR",
+        { weekday: "long", hour: "2-digit", minute: "2-digit" });
+    }
+    fila.append(linea, barra, cuando);
+    return fila;
+  }));
+  if (c.error) {
+    const e = document.createElement("div"); e.className = "cuando"; e.style.color = "#ffb300";
+    e.textContent = c.error; caja.append(e);
+  }
+}
 
 // ----- Pomodoro -----
 const COLORES_POMO = { trabajo: "#ff6b5e", descanso: "#1ed760", largo: "#4fc3f7" };
@@ -1545,7 +1813,7 @@ class Manejador(BaseHTTPRequestHandler):
 
         paginas = {"/": generar_html, "/index.html": generar_html,
                    "/musica": generar_musica, "/clima": generar_clima,
-                   "/pomodoro": generar_pomodoro, "/notas": generar_notas,
+                   "/pomodoro": generar_pomodoro, "/notas": generar_notas, "/claude": generar_claude,
                    "/apk": generar_apps, "/apk/": generar_apps}
         # "Local" = desde esta misma PC, ya sea por localhost o por su IP de red
         # (si el cliente tiene la misma IP que el servidor, es la propia PC).
@@ -1696,6 +1964,7 @@ class Manejador(BaseHTTPRequestHandler):
         elif url.path == "/control/ir":
             pag = params.get("pagina", [""])[0]
             destinos = {"monitor": "/?manual=1", "clima": "/clima?manual=1", "musica": "/musica?manual=1",
+                        "claude": "/claude?manual=1",
                         "pomodoro": "/pomodoro?manual=1", "notas": "/notas?manual=1",
                         "apk": "/apk?manual=1", "auto": "auto"}
             if pag not in destinos:
@@ -1743,6 +2012,11 @@ class Manejador(BaseHTTPRequestHandler):
                              "clave": _pomo["fase"], "corriendo": _pomo["corriendo"],
                              "restante": int(-(-pomo_restante() // 1)), "ciclos": _pomo["ciclos"]},
                 "notas": _notas,
+                # Solo porcentajes y horarios: el token nunca sale de leer_token_claude()
+                "claude": {"ventanas": [{"nombre": html.unescape(v["nombre"]), "pct": v["pct"],
+                                         "reinicio": v["reinicio"]}
+                                        for v in ventanas_claude(_claude["datos"])],
+                           "error": _claude["error"], "actualizado": _claude["actualizado"]},
             }
             cuerpo = json.dumps(datos).encode()
             self.send_response(200)
@@ -1784,6 +2058,7 @@ if __name__ == "__main__":
     threading.Thread(target=vigilar_musica, daemon=True).start()
     threading.Thread(target=vigilar_clima, daemon=True).start()
     threading.Thread(target=vigilar_pomodoro, daemon=True).start()
+    threading.Thread(target=vigilar_claude, daemon=True).start()
     servidor = ThreadingHTTPServer(("0.0.0.0", PUERTO), Manejador)
     print(f"Monitor andando. En la tablet abri:  http://{ip_local()}:{PUERTO}")
     print("Ctrl+C para cortar.")

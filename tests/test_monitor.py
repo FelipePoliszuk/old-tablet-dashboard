@@ -14,6 +14,9 @@ import urllib.request
 from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+# Que los tests no lean el config.json personal (por ejemplo, modo fijo o pomodoro 50/10):
+# siempre corren con los valores de fabrica, igual en cualquier PC y en GitHub.
+os.environ["MONITOR_SIN_CONFIG"] = "1"
 import monitor  # noqa: E402
 
 
@@ -180,6 +183,75 @@ class TestRotacion(unittest.TestCase):
         self.assertIsNone(monitor.tomar_orden("1.2.3.4"))
 
 
+class TestClaude(unittest.TestCase):
+    """Uso de Claude: lectura de la sesion, parseo, proyeccion y pagina."""
+
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.dir.cleanup)
+        self.cred = os.path.join(self.dir.name, ".credentials.json")
+        mock.patch.object(monitor, "CLAUDE_CREDENCIALES", self.cred).start()
+        mock.patch.dict(monitor._claude, {"datos": None, "actualizado": 0.0, "error": None}).start()
+        self.addCleanup(mock.patch.stopall)
+
+    def escribir_cred(self, **oauth):
+        with open(self.cred, "w") as f:
+            json.dump({"claudeAiOauth": oauth}, f)
+
+    def test_sin_sesion(self):
+        with self.assertRaises(monitor.ErrorClaude):
+            monitor.leer_token_claude()
+
+    def test_sesion_vencida(self):
+        self.escribir_cred(accessToken="secreto", expiresAt=(time.time() - 60) * 1000)
+        with self.assertRaises(monitor.ErrorClaude):
+            monitor.leer_token_claude()
+
+    def test_sesion_valida(self):
+        self.escribir_cred(accessToken="secreto", expiresAt=(time.time() + 3600) * 1000)
+        self.assertEqual(monitor.leer_token_claude(), "secreto")
+
+    def test_a_epoch(self):
+        self.assertEqual(monitor.a_epoch("1970-01-01T00:01:00Z"), 60)
+        self.assertEqual(monitor.a_epoch("1970-01-01T00:01:00+00:00"), 60)
+        self.assertIsNone(monitor.a_epoch("cualquier cosa"))
+        self.assertIsNone(monitor.a_epoch(None))
+
+    def test_ventanas_ignora_las_vacias(self):
+        datos = {"five_hour": {"utilization": 17.0, "resets_at": "2099-01-01T00:00:00Z"},
+                 "seven_day": {"utilization": 25, "resets_at": None},
+                 "seven_day_opus": None, "extra_usage": {"is_enabled": False}}
+        v = monitor.ventanas_claude(datos)
+        self.assertEqual([x["clave"] for x in v], ["five_hour", "seven_day"])
+        self.assertIsNone(v[1]["reinicio"])
+
+    def test_proyeccion(self):
+        semana = 7 * 86400
+        reinicio = 1_000_000.0
+        inicio = reinicio - semana
+        # 50% usado a un cuarto de la semana: llega al 100% a la mitad, antes del reinicio
+        self.assertAlmostEqual(monitor.proyeccion_limite(50, reinicio, semana, inicio + semana / 4),
+                               inicio + semana / 2)
+        # 10% usado a la mitad de la semana: no llega
+        self.assertIsNone(monitor.proyeccion_limite(10, reinicio, semana, inicio + semana / 2))
+
+    def test_pagina_con_datos_y_sin_token(self):
+        self.escribir_cred(accessToken="token-que-no-debe-aparecer", expiresAt=(time.time() + 3600) * 1000)
+        monitor._claude.update(datos={"five_hour": {"utilization": 17, "resets_at": "2099-01-01T00:00:00Z"},
+                                      "seven_day": {"utilization": 25, "resets_at": "2099-01-05T08:00:00Z"}},
+                               actualizado=time.time())
+        _, _, _, secciones = monitor.generar_claude()
+        cuerpo = "".join(secciones)
+        self.assertIn("17", cuerpo)
+        self.assertIn("25", cuerpo)
+        self.assertNotIn("token-que-no-debe-aparecer", cuerpo)
+
+    def test_error_se_escapa(self):
+        monitor._claude.update(error="<script>x</script>")
+        cuerpo = "".join(monitor.generar_claude()[3])
+        self.assertNotIn("<script>x", cuerpo)
+
+
 class TestServidor(unittest.TestCase):
     """Levanta el servidor de verdad en un puerto libre y le hace pedidos HTTP."""
 
@@ -202,7 +274,7 @@ class TestServidor(unittest.TestCase):
             return e.code, ""
 
     def test_paginas_responden(self):
-        for ruta in ("/", "/clima", "/musica", "/pomodoro", "/notas", "/apk"):
+        for ruta in ("/", "/clima", "/musica", "/pomodoro", "/notas", "/claude", "/apk"):
             estado, cuerpo = self.pedir(ruta)
             self.assertEqual(estado, 200, ruta)
             self.assertIn("target-densitydpi=device-dpi", cuerpo, ruta)
@@ -254,7 +326,8 @@ class TestConfig(unittest.TestCase):
         with open(os.path.join(self.dir.name, "config.json"), "w", encoding="utf-8") as f:
             f.write(contenido)
         falso = os.path.join(self.dir.name, "monitor.py")
-        with mock.patch.object(monitor, "__file__", falso), mock.patch("builtins.print"):
+        with mock.patch.object(monitor, "__file__", falso), mock.patch("builtins.print"), \
+                mock.patch.dict(os.environ, {"MONITOR_SIN_CONFIG": ""}):
             monitor._cargar_config()
 
     def test_pisa_valores_conocidos(self):

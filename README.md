@@ -23,6 +23,7 @@ No app is installed on the tablet and nothing needs root: it is just the stock 2
 - **Weather**: current conditions, a "will it rain in the next 12 h?" banner, a 3-day outlook and hourly forecast ([Open-Meteo](https://open-meteo.com/), free and no API key).
 - **Pomodoro**: 25/5 with a long break every 4, desktop notifications when a phase ends.
 - **Notes**: typed on the PC, shown huge on the tablet; dismissed with one click. Saved to disk.
+- **Claude usage**: the same 5-hour session and weekly percentages shown in claude.ai, with reset times, countdowns and a "you'll hit the limit before it resets" warning. Read every 5 minutes with the Claude Code login already on the PC (unofficial endpoint, see below).
 - **Smart rotation**: pomodoro while it runs, music while something is playing, otherwise it cycles monitor, weather and notes. A page chosen by hand is respected for 5 minutes. It can be turned off from the panel (fixed mode) so the tablet only changes page when you ask it to.
 - **Control panel** at `http://localhost:8080/control`: live preview of the tablet, switch its page, control music and the pomodoro, write notes. Only reachable from the PC itself.
 - **App sideloading**: drop an `.apk` in `apk/` and install it from the tablet with one click.
@@ -64,6 +65,7 @@ Other details:
 - **One-shot orders.** A panel order is consumed by the first tablet poll and expires after 60 s, so a stale order never yanks the screen later.
 - **Path traversal safe.** `apk/` downloads go through `basename()`, and the icon endpoint only accepts a whitelist of names.
 - **Atomic writes.** Notes are written to a temp file and moved into place with `os.replace`, so a crash can't leave half a file.
+- **Claude usage is read-only and stays local.** The page uses the OAuth token Claude Code keeps in `~/.claude/.credentials.json` to call the same usage endpoint Claude Code uses. The token is only sent to Anthropic: it is never logged, stored elsewhere or sent to the tablet or the panel. The server does not refresh it (so it can't interfere with Claude Code); if it expires, the page asks you to open `claude`. The endpoint is not a documented public API and may change; if it does, only this page shows an error.
 - **No required dependencies.** Standard library only. Pillow is optional (icons, cover resizing and tint). `playerctl` is needed only for the music page.
 
 ## Setup

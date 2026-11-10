@@ -17,5 +17,8 @@
   "POMO_TRABAJO": 1500,
   "POMO_DESCANSO": 300,
   "POMO_LARGO": 900,
-  "POMO_CADA": 4
+  "POMO_CADA": 4,
+
+  "CLAUDE_CREDENCIALES": "~/.claude/.credentials.json",
+  "CLAUDE_CADA": 300
 }

@@ -23,6 +23,7 @@ En la tablet no hay nada instalado y no hace falta root: es el navegador de fáb
 - **Clima**: condiciones actuales, aviso de "¿llueve en las próximas 12 h?", pronóstico de 3 días y de las próximas horas ([Open-Meteo](https://open-meteo.com/), gratis y sin clave).
 - **Pomodoro**: 25/5 con descanso largo cada 4 y notificación en el escritorio al cambiar de fase.
 - **Notas**: se escriben en la PC y se ven enormes en la tablet; se marcan como listas con un clic. Se guardan en disco.
+- **Uso de Claude**: los mismos porcentajes de la sesión de 5 horas y de la semana que muestra claude.ai, con la hora de reinicio, una cuenta regresiva y un aviso si a este ritmo vas a llegar al límite antes de que se restablezca. Se consulta cada 5 minutos con la sesión de Claude Code que ya está en la PC (no es una API oficial, ver abajo).
 - **Rotación inteligente**: el pomodoro mientras corre, la música mientras suena algo y, si no, va alternando monitor, clima y notas. Una página elegida a mano se respeta 5 minutos. Se puede apagar desde el panel (modo fijo), y así la tablet solo cambia de página cuando se lo pedís.
 - **Panel de control** en `http://localhost:8080/control`: vista previa en vivo, cambiar la página de la tablet, controlar la música y el pomodoro, escribir notas. Solo se puede abrir desde la propia PC.
 - **Instalar apps**: dejás un `.apk` en `apk/` y lo instalás desde la tablet con un clic.
@@ -51,6 +52,7 @@ Otros detalles:
 - **Órdenes de un solo uso.** Una orden del panel la toma la primera consulta de la tablet y vence a los 60 s, así una orden vieja no cambia la pantalla más tarde.
 - **Sin path traversal.** Las descargas de `apk/` pasan por `basename()` y el endpoint de íconos solo acepta una lista fija de nombres.
 - **Escrituras atómicas.** Las notas se escriben en un archivo temporal y se mueven con `os.replace`, así un corte no deja el archivo a medias.
+- **El uso de Claude es de solo lectura y queda en la PC.** La página usa el token que Claude Code guarda en `~/.claude/.credentials.json` para consultar el mismo endpoint de uso que consulta Claude Code. El token solo se manda a Anthropic: no se registra, no se guarda en otro lado y no llega ni a la tablet ni al panel. El servidor no lo renueva (así no interfiere con Claude Code): si vence, la página te pide abrir `claude`. No es una API pública documentada y puede cambiar; si pasa, solo esta página muestra un error.
 - **Sin dependencias obligatorias.** Solo la biblioteca estándar. Pillow es opcional (íconos, portadas y color de fondo). `playerctl` hace falta solo para la página de música.
 
 ## Instalación
